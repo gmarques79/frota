@@ -8,66 +8,95 @@ def ler_pdf(caminho):
             texto += pagina.extract_text() + "\n"
     return texto
 
-def dividir_blocos(texto):
-    partes = texto.split("Placa:")
-    return ["Placa:" + p for p in partes[1:]]
 
-def extrair_cabecalho(bloco):
-    m = re.search(r"Placa:\s*([A-Z0-9\-]+).*?Prefixo:\s*(.*?)\s*-\s*Descrição:\s*(.*?)\n", bloco)
-    if not m:
-        return None, None, None
-    return m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+def processar_pdf(caminho_pdf):
+    texto = ler_pdf(caminho_pdf)
 
-def extrair_abastecimentos(bloco):
-    abastecimentos = []
+    linhas = texto.split("\n")
 
-    padrao = re.compile(
-        r"([A-ZÁÉÍÓÚÂÊÔÃÕÇ ]+)\n"
-        r"([0-9,]+)\s+([0-9]+)\s+R\$\s*([0-9,]+)\s+([0-9]+)\s+([0-9/ :]+)\n"
-        r".*?\n"
-        r"(.*?)\n"
-        r"([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([A-Z0-9 ]+)\s+R\$\s*([0-9,]+)\s+([0-9,]+)\s+R\$\s*([0-9,]+)\s+([A-Z]+)\s+([0-9]+)",
+    resultados = []
+    subunidade_atual = None
+    placa_atual = None
+    descricao_atual = None
+
+    # Regex de captura dos abastecimentos
+    regex_abastecimento = re.compile(
+        r"([A-ZÁÉÍÓÚÂÊÔÃÕÇ ]+)\s+"                 
+        r"([0-9,]+)\s+"                             
+        r"([0-9]+)\s+"                              
+        r"R\$\s*([0-9,]+)\s+"                       
+        r"([0-9]+)\s+"                              
+        r"([0-9/]{10})\s*([0-9:]{8})\s+"            
+        r".*?\s+"                                  
+        r"([A-Z0-9 ().,-/]+)\s+"                   
+        r"([0-9]+)\s+"                              
+        r"([0-9]+)\s+"                             
+        r"([0-9]+)\s+"                              
+        r"([A-Z0-9 ]+)\s+"                          
+        r"R\$\s*([0-9,]+)\s+"                       
+        r"([0-9,]+)\s+"                             
+        r"R\$\s*([0-9,]+)\s+"                       
+        r"([A-Z]+)",                                
         re.DOTALL
     )
 
-    for m in re.finditer(padrao, bloco):
-        d = {
-            "condutor": m.group(1).replace("\n", " ").strip(),
-            "km_l": m.group(2),
-            "km_rodado": m.group(3),
-            "rs_km": m.group(4),
-            "aut": m.group(5),
-            "datahora": m.group(6),
-            "estabelecimento": m.group(7),
-            "registro": m.group(8),
-            "km_ult": m.group(9),
-            "km_atual": m.group(10),
-            "produto": m.group(11),
-            "vr_unit": m.group(12),
-            "qtde": m.group(13),
-            "valor": m.group(14),
-            "tipo_frota": m.group(15),
-            "patrimonio": m.group(16)
-        }
-        abastecimentos.append(d)
+    buffer_bloco = []
 
-    return abastecimentos
+    for linha in linhas:
+        linha = linha.strip()
 
-def processar_pdf(caminho):
-    texto = ler_pdf(caminho)
-    blocos = dividir_blocos(texto)
-    linhas = []
+        if linha.startswith("SUBUNIDADE:"):
+            subunidade_atual = linha.replace("SUBUNIDADE:", "").strip()
+            continue
 
-    for bloco in blocos:
-        placa, prefixo, desc = extrair_cabecalho(bloco)
-        abastecimentos = extrair_abastecimentos(bloco)
+        if linha.startswith("Placa:"):
+            m = re.search(r"Placa:\s*([A-Z0-9\-]+).*Descricao:\s*(.*?)-", linha.replace("Descri��o", "Descrição"))
+            if m:
+                placa_atual = m.group(1).strip()
+                descricao_atual = m.group(2).strip()
+            buffer_bloco = []
+            continue
 
-        for ab in abastecimentos:
-            linhas.append({
-                "placa": placa,
-                "prefixo": prefixo,
-                "descricao": desc,
-                **ab
+        buffer_bloco.append(linha)
+        bloco_texto = " ".join(buffer_bloco)
+
+        for m in re.finditer(regex_abastecimento, bloco_texto):
+            condutor = m.group(1).strip()
+            km_l = float(m.group(2).replace(",", "."))
+            km_rodado = int(m.group(3))
+            data_hora = f"{m.group(6)} {m.group(7)}"
+            estabelecimento = m.group(8).replace("  ", " ").strip()
+            km_anterior = int(m.group(10))
+            km_atual = int(m.group(11))
+            produto = m.group(12).strip()
+            valor_unitario = float(m.group(13).replace(",", "."))
+            litros = float(m.group(14).replace(",", "."))
+            valor_total = float(m.group(15).replace(",", "."))
+            tipo_frota = m.group(16)
+
+            resultados.append({
+                "subunidade": subunidade_atual,
+                "placa": placa_atual,
+                "descricao": descricao_atual,
+                "condutor": condutor,
+                "data_hora": data_hora,
+                "km_l": km_l,
+                "km_rodado": km_rodado,
+                "estabelecimento": estabelecimento,
+                "km_anterior": km_anterior,
+                "km_atual": km_atual,
+                "produto": produto,
+                "valor_unitario": valor_unitario,
+                "litros": litros,
+                "valor_total": valor_total,
+                "tipo_frota": tipo_frota
             })
 
-    return linhas
+    return resultados
+
+
+if __name__ == "__main__":
+    caminho = "RelatorioConsumoSubUnidadeVeiculo-20251123125200.pdf"
+    dados = processar_pdf(caminho)
+    import json
+    print(json.dumps(dados, indent=2, ensure_ascii=False))
