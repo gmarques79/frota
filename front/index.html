@@ -48,7 +48,7 @@ async function enviar() {
 
     document.getElementById("msg").innerText = "Enviando...";
 
-    const resp = await fetch("https://frota-2jpn.onrender.com", {
+    const resp = await fetch("https://frota-2jpn.onrender.com/upload", {
         method: "POST",
         body: form
     });
