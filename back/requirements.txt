@@ -5,3 +5,4 @@ gspread
 google-auth
 python-multipart
 openpyxl
+pandas==2.2.2
